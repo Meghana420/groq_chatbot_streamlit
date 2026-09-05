@@ -1,7 +1,7 @@
 import os
 import warnings
 
-from groq import NotFoundError, RateLimitError
+from groq import AuthenticationError, NotFoundError, RateLimitError
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
@@ -42,7 +42,7 @@ def say_hello(name: str) -> str:
 @st.cache_resource
 def create_agent():
     groq_key = get_setting("GROQ_API_KEY")
-    model_name = get_setting("GROQ_MODEL", "llama-3.1-8b-instant")
+    model_name = get_setting("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     if not groq_key:
         return None
@@ -110,38 +110,15 @@ def main():
             try:
                 response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
                 answer = response["messages"][-1].content
-            except RateLimitError:
-                fallback_model = "openai/gpt-oss-20b"
-                configured_model = get_setting("GROQ_MODEL", fallback_model)
-                if configured_model == fallback_model:
-                    st.error(
-                        "Groq rate limit reached. Please wait for the quota to "
-                        "reset or use an API key with available quota."
-                    )
-                else:
-                    try:
-                        fallback = ChatGroq(
-                            api_key=get_setting("GROQ_API_KEY"),
-                            model=fallback_model,
-                            temperature=0,
-                        )
-                        fallback_agent = create_react_agent(
-                            fallback, [calculator, say_hello]
-                        )
-                        response = fallback_agent.invoke(
-                            {"messages": [HumanMessage(content=prompt)]}
-                        )
-                        answer = response["messages"][-1].content
-                    except (NotFoundError, RateLimitError):
-                        st.error(
-                            "The configured Groq model is unavailable or rate-limited. "
-                            "Set GROQ_MODEL to an active model and use an API key "
-                            "with available quota."
-                        )
+            except (AuthenticationError, RateLimitError):
+                st.error(
+                    "Groq API quota or key issue. Please wait a moment or create a "
+                    "new Groq API key with available quota."
+                )
             except NotFoundError:
                 st.error(
-                    "The GROQ_MODEL is unavailable. Set it to an active Groq model "
-                    "such as openai/gpt-oss-20b."
+                    "The selected Groq model is unavailable. Update GROQ_MODEL to a "
+                    "valid active model such as llama-3.3-70b-versatile."
                 )
             except Exception:
                 st.error(
