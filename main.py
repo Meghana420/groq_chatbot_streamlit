@@ -1,6 +1,7 @@
 import os
 import warnings
 
+from groq import RateLimitError
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
@@ -41,7 +42,7 @@ def say_hello(name: str) -> str:
 @st.cache_resource
 def create_agent():
     groq_key = get_setting("GROQ_API_KEY")
-    model_name = get_setting("GROQ_MODEL", "qwen/qwen3.6-27b")
+    model_name = get_setting("GROQ_MODEL", "llama-3.1-8b-instant")
 
     if not groq_key:
         return None
@@ -106,10 +107,46 @@ def main():
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
-            answer = response["messages"][-1].content
-        st.markdown(answer)
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+            try:
+                response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+                answer = response["messages"][-1].content
+            except RateLimitError:
+                fallback_model = "llama-3.1-8b-instant"
+                configured_model = get_setting("GROQ_MODEL", fallback_model)
+                if configured_model == fallback_model:
+                    st.error(
+                        "Groq rate limit reached. Please wait for the quota to "
+                        "reset or use an API key with available quota."
+                    )
+                else:
+                    try:
+                        fallback = ChatGroq(
+                            api_key=get_setting("GROQ_API_KEY"),
+                            model=fallback_model,
+                            temperature=0,
+                        )
+                        fallback_agent = create_react_agent(
+                            fallback, [calculator, say_hello]
+                        )
+                        response = fallback_agent.invoke(
+                            {"messages": [HumanMessage(content=prompt)]}
+                        )
+                        answer = response["messages"][-1].content
+                    except RateLimitError:
+                        st.error(
+                            "Groq rate limit reached for both models. Please wait "
+                            "for the quota to reset or use another API key."
+                        )
+            except Exception:
+                st.error(
+                    "The chatbot could not contact Groq. Check GROQ_API_KEY and "
+                    "GROQ_MODEL, then try again."
+                )
+            else:
+                st.markdown(answer)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": answer}
+                )
 
 
 if __name__ == "__main__":
