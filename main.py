@@ -1,7 +1,7 @@
 import os
 import warnings
 
-from groq import RateLimitError
+from groq import NotFoundError, RateLimitError
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
@@ -111,7 +111,7 @@ def main():
                 response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
                 answer = response["messages"][-1].content
             except RateLimitError:
-                fallback_model = "llama-3.1-8b-instant"
+                fallback_model = "openai/gpt-oss-20b"
                 configured_model = get_setting("GROQ_MODEL", fallback_model)
                 if configured_model == fallback_model:
                     st.error(
@@ -132,11 +132,17 @@ def main():
                             {"messages": [HumanMessage(content=prompt)]}
                         )
                         answer = response["messages"][-1].content
-                    except RateLimitError:
+                    except (NotFoundError, RateLimitError):
                         st.error(
-                            "Groq rate limit reached for both models. Please wait "
-                            "for the quota to reset or use another API key."
+                            "The configured Groq model is unavailable or rate-limited. "
+                            "Set GROQ_MODEL to an active model and use an API key "
+                            "with available quota."
                         )
+            except NotFoundError:
+                st.error(
+                    "The GROQ_MODEL is unavailable. Set it to an active Groq model "
+                    "such as openai/gpt-oss-20b."
+                )
             except Exception:
                 st.error(
                     "The chatbot could not contact Groq. Check GROQ_API_KEY and "
